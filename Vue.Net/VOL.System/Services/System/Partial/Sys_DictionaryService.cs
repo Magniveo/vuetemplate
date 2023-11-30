@@ -31,18 +31,17 @@ namespace VOL.System.Services
             get { return DictionaryManager.Dictionaries; }
         }
 
-        public async Task<object> GetVueDictionary(string[] dicNos)
+        public object GetVueDictionary(string[] dicNos)
         {
             if (dicNos == null || dicNos.Count() == 0) return new string[] { };
-            var dicConfig = await Task.FromResult(
-                      DictionaryManager.GetDictionaries(dicNos, false).Select(s => new
-                      {
-                          dicNo = s.DicNo,
-                          config = s.Config,
-                          dbSql = s.DbSql,
-                          list = s.Sys_DictionaryList.OrderByDescending(o => o.OrderNo)
-                           .Select(list => new { key = list.DicValue, value = list.DicName })
-                      }).ToList());
+            var dicConfig = DictionaryManager.GetDictionaries(dicNos, false).Select(s => new
+            {
+                dicNo = s.DicNo,
+                config = s.Config,
+                dbSql = s.DbSql,
+                list = s.Sys_DictionaryList.OrderByDescending(o => o.OrderNo)
+                          .Select(list => new { key = list.DicValue, value = list.DicName })
+            }).ToList();
 
             object GetSourceData(string dicNo, string dbSql, object data)
             {
@@ -69,7 +68,7 @@ namespace VOL.System.Services
         /// <param name="dicNo"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public async Task<object> GetSearchDictionary(string dicNo, string value)
+        public object GetSearchDictionary(string dicNo, string value)
         {
             if (string.IsNullOrEmpty(dicNo) || string.IsNullOrEmpty(value))
             {
@@ -83,7 +82,7 @@ namespace VOL.System.Services
                 return null;
             }
             sql = $"SELECT * FROM ({sql}) AS t WHERE value LIKE @value";
-            return await Task.FromResult(repository.DapperContext.QueryList<object>(sql, new { value = "%" + value + "%" }));
+            return repository.DapperContext.QueryList<object>(sql, new { value = "%" + value + "%" });
         }
 
         /// <summary>
@@ -223,22 +222,19 @@ namespace VOL.System.Services
             //   source = source.Replace("'", "''");
             source = Regex.Replace(source, "-", "", RegexOptions.IgnoreCase);
             //去除执行SQL语句的命令关键字
-            source = Regex.Replace(source, "insert", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "insert ", "", RegexOptions.IgnoreCase);
             // source = Regex.Replace(source, "sys.", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "update", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "delete", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "drop", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "truncate", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "declare", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "xp_cmdshell", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "/add", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "net user", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "update ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "delete ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "drop ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "truncate ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "declare ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source,  "xp_cmdshell ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, "/add ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, " net user ", "", RegexOptions.IgnoreCase);
             //去除执行存储过程的命令关键字 
-            source = Regex.Replace(source, "exec", "", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "execute", "", RegexOptions.IgnoreCase);
-            //去除系统存储过程或扩展存储过程关键字
-            source = Regex.Replace(source, "xp_", "x p_", RegexOptions.IgnoreCase);
-            source = Regex.Replace(source, "sp_", "s p_", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, " exec ", "", RegexOptions.IgnoreCase);
+            source = Regex.Replace(source, " execute ", "", RegexOptions.IgnoreCase);
             //防止16进制注入
             source = Regex.Replace(source, "0x", "0 x", RegexOptions.IgnoreCase);
 

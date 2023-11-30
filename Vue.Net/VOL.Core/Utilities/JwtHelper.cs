@@ -20,7 +20,7 @@ namespace VOL.Core.Utilities
         /// <returns></returns>
         public static string IssueJwt(UserInfo userInfo)
         {
-            string exp = $"{new DateTimeOffset(DateTime.Now.AddMinutes(AppSetting.ExpMinutes)).ToUnixTimeSeconds()}";
+            string exp = $"{new DateTimeOffset(DateTime.Now.AddMinutes(ManageUser.UserContext.MenuType == 1? 43200: AppSetting.ExpMinutes)).ToUnixTimeSeconds()}";
             var claims = new List<Claim>
                 {
                 //new Claim(ClaimTypes.Name,userInfo.UserName ),
@@ -85,6 +85,8 @@ namespace VOL.Core.Utilities
         {
             try
             {
+                if (jwtStr.IsNullOrEmpty()) return 0;
+                jwtStr = jwtStr.Replace("Bearer ", "");
                 return new JwtSecurityTokenHandler().ReadJwtToken(jwtStr).Id.GetInt();
             }
             catch

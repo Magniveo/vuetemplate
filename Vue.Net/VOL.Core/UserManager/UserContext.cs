@@ -11,6 +11,7 @@ using VOL.Core.DBManager;
 using VOL.Core.Enums;
 using VOL.Core.Extensions;
 using VOL.Core.Extensions.AutofacManager;
+using VOL.Core.UserManager;
 using VOL.Entity;
 using VOL.Entity.DomainModels;
 
@@ -89,15 +90,27 @@ namespace VOL.Core.ManageUser
             if (_userInfo != null && _userInfo.User_Id > 0) return _userInfo;
 
             _userInfo = DBServerProvider.DbContext.Set<Sys_User>()
-                .Where(x => x.User_Id == userId).Select(s => new UserInfo()
+                .Where(x => x.User_Id == userId).Select(s => new
                 {
                     User_Id = userId,
                     Role_Id = s.Role_Id.GetInt(),
                     RoleName = s.RoleName,
+                    //2022.08.15增加部门id
+                    DeptId = s.Dept_Id??0,
                     Token = s.Token,
                     UserName = s.UserName,
                     UserTrueName = s.UserTrueName,
-                    Enable = s.Enable
+                    Enable = s.Enable,
+                    DeptIds= s.DeptIds
+                }).ToList().Select(s => new UserInfo()
+                {
+                    User_Id = userId,
+                    Role_Id = s.Role_Id,
+                    Token = s.Token,
+                    UserName = s.UserName,
+                    UserTrueName = s.UserTrueName,
+                    Enable = 1,
+                    DeptIds = string.IsNullOrEmpty(s.DeptIds) ? new List<Guid>() : s.DeptIds.Split(",").Select(x => (Guid)x.GetGuid()).ToList(),
                 }).FirstOrDefault();
 
             if (_userInfo != null && _userInfo.User_Id > 0)
@@ -124,6 +137,7 @@ namespace VOL.Core.ManageUser
         private static readonly Dictionary<int, List<Permissions>> rolePermissions = new Dictionary<int, List<Permissions>>();
 
 
+
         /// <summary>
         /// 获取用户所有的菜单权限
         /// </summary>
@@ -137,6 +151,22 @@ namespace VOL.Core.ManageUser
         }
 
         /// <summary>
+        /// 菜单按钮变更时，同时刷新权限缓存2022.05.23
+        /// </summary>
+        /// <param name="menuId"></param>
+        public void RefreshWithMenuActionChange(int menuId)
+        {
+            foreach (var roleId in rolePermissions.Where(c => c.Value.Any(x => x.Menu_Id == menuId)).Select(s => s.Key))
+            {
+                if (rolePermissionsVersion.ContainsKey(roleId))
+                {
+                    CacheService.Add(roleId.GetRoleIdKey(), DateTime.Now.ToString("yyyyMMddHHMMssfff"));
+                }
+            }
+
+        }
+
+        /// <summary>
         /// 获取单个表的权限
         /// </summary>
         /// <param name="tableName"></param>
@@ -145,7 +175,17 @@ namespace VOL.Core.ManageUser
         {
             return GetPermissions(RoleId).Where(x => x.TableName == tableName).FirstOrDefault();
         }
-
+        /// <summary>
+        /// 2022.03.26
+        /// 菜单类型1:移动端，0:PC端
+        /// </summary>
+        public static int MenuType
+        {
+            get
+            {
+                return Context.Request.Headers.ContainsKey("uapp") ? 1 : 0;
+            }
+        }
         /// <summary>
         /// 自定条件查询权限
         /// </summary>
@@ -153,7 +193,8 @@ namespace VOL.Core.ManageUser
         /// <returns></returns>
         public Permissions GetPermissions(Func<Permissions, bool> func)
         {
-            return GetPermissions(RoleId).Where(func).FirstOrDefault();
+            // 2022.03.26增移动端加菜单类型判断
+            return GetPermissions(RoleId).Where(func).Where(x => x.MenuType == MenuType).FirstOrDefault();
         }
 
         private List<Permissions> ActionToArray(List<Permissions> permissions)
@@ -162,9 +203,11 @@ namespace VOL.Core.ManageUser
             {
                 try
                 {
+                    var menuAuthArr = x.MenuAuth.DeserializeObject<List<Sys_Actions>>();
                     x.UserAuthArr = string.IsNullOrEmpty(x.UserAuth)
                     ? new string[0]
-                    : x.UserAuth.Split(",");
+                    : x.UserAuth.Split(",").Where(c => menuAuthArr.Any(m => m.Value == c)).ToArray();
+
                 }
                 catch { }
                 finally
@@ -202,15 +245,20 @@ namespace VOL.Core.ManageUser
         {
             if (IsRoleIdSuperAdmin(roleId))
             {
-                var permissions = DBServerProvider.DbContext.Set<Sys_Menu>().Where(x => x.Enable == 1).Select(a => new Permissions
-                {
-                    Menu_Id = a.Menu_Id,
-                    ParentId = a.ParentId,
-                    //2020.05.06增加默认将表名转换成小写，权限验证时不再转换
-                    TableName = (a.TableName ?? "").ToLower(),
-                    //MenuAuth = a.Auth,
-                    UserAuth = a.Auth,
-                }).ToList();
+                //2020.12.27增加菜单界面上不显示，但可以分配权限
+                var permissions = DBServerProvider.DbContext.Set<Sys_Menu>()
+                    .Where(x => x.Enable == 1 || x.Enable == 2)
+                    .Select(a => new Permissions
+                    {
+                        Menu_Id = a.Menu_Id,
+                        ParentId = a.ParentId,
+                        //2020.05.06增加默认将表名转换成小写，权限验证时不再转换
+                        TableName = (a.TableName ?? "").ToLower(),
+                        //MenuAuth = a.Auth,
+                        UserAuth = a.Auth,
+                        // 2022.03.26增移动端加菜单类型
+                        MenuType = a.MenuType ?? 0
+                    }).ToList();
                 return MenuActionToArray(permissions);
             }
             ICacheService cacheService = CacheService;
@@ -250,7 +298,9 @@ namespace VOL.Core.ManageUser
                                                       //2020.05.06增加默认将表名转换成小写，权限验证时不再转换
                                                       TableName = (a.TableName ?? "").ToLower(),
                                                       MenuAuth = a.Auth,
-                                                      UserAuth = b.AuthValue ?? ""
+                                                      UserAuth = b.AuthValue ?? "",
+                                                      // 2022.03.26增移动端加菜单类型
+                                                      MenuType = a.MenuType ?? 0
                                                   }).ToList();
                 ActionToArray(_permissions);
                 string _version = cacheService.Get(roleKey);
@@ -282,7 +332,6 @@ namespace VOL.Core.ManageUser
         {
             if (roleId <= 0) roleId = RoleId;
             tableName = tableName.ToLower();
-            authName = authName.ToLower();
             return GetPermissions(roleId).Any(x => x.TableName == tableName && x.UserAuthArr.Contains(authName));
         }
 
@@ -295,7 +344,7 @@ namespace VOL.Core.ManageUser
         /// <returns></returns>
         public bool ExistsPermissions(string tableName, ActionPermissionOptions actionPermission, int roleId = 0)
         {
-            return ExistsPermissions(tableName, actionPermission.ToString(),roleId);
+            return ExistsPermissions(tableName, actionPermission.ToString(), roleId);
         }
         public int UserId
         {
@@ -324,6 +373,18 @@ namespace VOL.Core.ManageUser
         public int RoleId
         {
             get { return UserInfo.Role_Id; }
+        }
+        public List<Guid> DeptIds
+        {
+            get { return UserInfo.DeptIds; }
+        }
+        /// <summary>
+        /// 获取所有子部门
+        /// </summary>
+        /// <returns></returns>
+        public List<Guid> GetAllChildrenDeptIds()
+        {
+            return DepartmentContext.GetAllChildrenIds(DeptIds);
         }
 
         public void LogOut(int userId)

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using VOL.Core.Controllers.Basic;
@@ -10,11 +11,11 @@ namespace VOL.System.Controllers
 {
     public partial class Sys_DictionaryController
     {
-        [HttpPost, Route("GetVueDictionary")]
+        [HttpPost, Route("GetVueDictionary"), AllowAnonymous]
         [ApiActionPermission()]
-        public async Task<IActionResult> GetVueDictionary([FromBody]string[] dicNos)
+        public IActionResult GetVueDictionary([FromBody] string[] dicNos)
         {
-            return Content((await Service.GetVueDictionary(dicNos)).Serialize());
+            return Content(Service.GetVueDictionary(dicNos).Serialize());
         }
         /// <summary>
         /// table加载数据后刷新当前table数据的字典项(适用字典数据量比较大的情况)
@@ -31,10 +32,10 @@ namespace VOL.System.Controllers
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        [HttpPost, Route("getSearchDictionary")]
-        public async Task<IActionResult> GetSearchDictionary(string dicNo, string value)
+        [HttpPost, Route("getSearchDictionary"), AllowAnonymous]
+        public IActionResult GetSearchDictionary(string dicNo, string value)
         {
-            return Json(await Service.GetSearchDictionary(dicNo, value));
+            return Json(Service.GetSearchDictionary(dicNo, value));
         }
 
         /// <summary>
@@ -43,7 +44,7 @@ namespace VOL.System.Controllers
         /// <param name="dicNo"></param>
         /// <param name="key"></param>
         /// <returns></returns>
-        [HttpPost, Route("getRemoteDefaultKeyValue")]
+        [HttpPost, Route("getRemoteDefaultKeyValue"), AllowAnonymous]
         public async Task<IActionResult> GetRemoteDefaultKeyValue(string dicNo, string key)
         {
             return Json(await Service.GetRemoteDefaultKeyValue(dicNo, key));
@@ -53,7 +54,7 @@ namespace VOL.System.Controllers
         /// </summary>
         /// <returns></returns>
         [HttpPost, Route("GetBuilderDictionary")]
-        [ApiActionPermission(ActionRolePermission.SuperAdmin)]
+        // [ApiActionPermission(ActionRolePermission.SuperAdmin)]
         public async Task<IActionResult> GetBuilderDictionary()
         {
             return Json(await Service.GetBuilderDictionary());

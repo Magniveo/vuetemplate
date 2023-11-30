@@ -6,7 +6,9 @@
  -->
 <template>
     <div>
-        <view-grid :columns="columns"
+        <view-grid
+                   ref="grid"
+                   :columns="columns"
                    :detail="detail"
                    :editFormFields="editFormFields"
                    :editFormFileds="editFormFields"
@@ -44,7 +46,8 @@
                 searchFormOptions: #searchFormOptions,
                 columns: [#columns],
                 detail: {
-                    cnName:"#detailCnName",
+                    cnName: "#detailCnName",
+                    table: "#detailTable",
                     columns: [#detailColumns],
                     sortName: "#detailSortName",
                     key:"#detailKey"

@@ -1,14 +1,16 @@
-﻿using System;
+﻿using OfficeOpenXml;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using VOL.Core.Enums;
 using VOL.Core.Utilities;
+using VOL.Core.WorkFlow;
 using VOL.Entity.DomainModels;
 
 namespace VOL.Core.Filters
 {
-    public  abstract class ServiceFunFilter<T> where T : class
+    public abstract class ServiceFunFilter<T> where T : class
     {
 
         /// <summary>
@@ -46,8 +48,8 @@ namespace VOL.Core.Filters
         /// </summary>
         protected bool LimitCurrentUserPermission { get; set; } = false;
 
-        ///默认导出最大数量5K数据
-        protected int Limit { get; set; } = 5000;
+        ///默认导出最大表数量：0不限制 
+        protected int Limit { get; set; } = 0;
 
         /// <summary>
         /// 默认上传文件大小限制3M
@@ -115,6 +117,17 @@ namespace VOL.Core.Filters
         protected Func<T, object, WebResponseContent> AddOnExecuted;
 
         /// <summary>
+        /// 进入审批流程方法之前
+        /// </summary>
+        protected Func<T, bool> AddWorkFlowExecuting;
+
+        /// <summary>
+        /// 写入审批流程数据之后
+        /// list:审批的人id
+        /// </summary>
+        protected Action<T,List<int>> AddWorkFlowExecuted;
+
+        /// <summary>
         /// 调用更新方法前处理(SaveModel为传入的原生数据)
         /// </summary>
         protected Func<SaveModel, WebResponseContent> UpdateOnExecute;
@@ -162,6 +175,24 @@ namespace VOL.Core.Filters
         /// </summary>
         protected Func<List<T>, WebResponseContent> AuditOnExecuted;
 
+
+        /// <summary>
+        /// 审批流程审核前
+        /// T:当前审核的数据
+        /// AuditStatus:审核状态
+        /// bool:当前数据是否为最后一个人审核
+        /// </summary>
+        protected Func<T, AuditStatus, bool, WebResponseContent> AuditWorkFlowExecuting;
+
+        /// <summary>
+        /// 审批流程审核后
+        /// T:当前审核的数据
+        /// AuditStatus:审核状态
+        /// list:下一个节点的审批人id
+        /// bool:当前数据是否为最后一个人审核
+        /// </summary>
+        protected Func<T, AuditStatus,List<int>, bool, WebResponseContent> AuditWorkFlowExecuted;
+
         /// <summary>
         ///导出前处理,DataTable导出的表数据
         ///List<T>导出的数据, List<string>忽略不需要导出的字段
@@ -174,7 +205,10 @@ namespace VOL.Core.Filters
         /// 导出表数据(界面上导出操作),指定要导出的列，格式:Expression<Func<T, object>> exp = x => new { x.字段1, x.字段2 }
         /// </summary>
         protected Expression<Func<T, object>> ExportColumns { get; set; }
-
+        /// <summary>
+        /// 指定要导出的列
+        /// </summary>
+        protected string[] ExportColumnsArray { get; set; }
 
         /// <summary>
         /// 2020.05.07
@@ -182,6 +216,7 @@ namespace VOL.Core.Filters
         /// </summary>
         protected Expression<Func<T, object>> DownLoadTemplateColumns { get; set; }
 
+ 
         /// <summary>
         /// 导入保存后
         /// </summary>
@@ -191,6 +226,28 @@ namespace VOL.Core.Filters
         /// 导入保存前
         /// </summary>
         protected Func<List<T>, WebResponseContent> ImportOnExecuting;
+
+        /// <summary>
+        /// 导入时不验证下拉框数据源的字段值2023.05.03
+        /// </summary>
+        protected Expression<Func<T, object>> ImportIgnoreSelectValidationColumns;
+
+        /// <summary>
+        /// 2022.06.20增加原生excel读取方法(导入时可以自定义读取excel内容)
+        /// string=当前读取的excel单元格的值
+        /// ExcelWorksheet=excel对象
+        /// ExcelRange当前excel单元格对象
+        /// int=当前读取的第几数
+        /// int=当前读取的第几列
+        /// string=返回的值
+        /// </summary>
+        protected Func<string, ExcelWorksheet, ExcelRange, int, int, string> ImportOnReadCellValue;
+
+
+        /// <summary>
+        /// 自定义上传文件夹(2022.10.07)
+        /// </summary>
+        protected string UploadFolder = null;
 
     }
 }

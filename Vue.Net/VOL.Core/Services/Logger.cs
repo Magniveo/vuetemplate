@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using VOL.Core.Configuration;
+using VOL.Core.Const;
 using VOL.Core.DBManager;
 using VOL.Core.Enums;
 using VOL.Core.Extensions;
@@ -22,13 +24,27 @@ namespace VOL.Core.Services
     /// </summary>
     public static class Logger
     {
-        public static readonly object _logger = new object();
-        public static Queue<Sys_Log> loggerQueueData = new Queue<Sys_Log>();
+        public static ConcurrentQueue<Sys_Log> loggerQueueData = new ConcurrentQueue<Sys_Log>();
         private static DateTime lastClearFileDT = DateTime.Now.AddDays(-1);
         private static string _loggerPath = AppSetting.DownLoadPath + "Logger\\Queue\\";
         static Logger()
         {
-            Task.Run(() => { Start(); });
+            Task.Run(() =>
+            {
+                Start();
+                //if (DBType.Name != "MySql")
+                //{
+                //    return;
+                //}
+                //try
+                //{ 
+                //    DBServerProvider.SqlDapper.ExcuteNonQuery("set global local_infile = 'ON';", null);
+                //}
+                //catch (Exception ex)
+                //{
+                //    Console.WriteLine($"日志启动调用mysql数据库异常：{ex.Message},{ex.StackTrace}");
+                //}
+            });
         }
 
         public static void Info(string message)
@@ -68,7 +84,31 @@ namespace VOL.Core.Services
         {
             Add(loggerType, requestParam, resposeParam, ex, LoggerStatus.Error);
         }
-
+        /// <summary>
+        /// 多线程调用日志
+        /// </summary>
+        /// <param name="message"></param>
+        public static void AddAsync(string message, string ex = null)
+        {
+            AddAsync(LoggerType.Info, null, message, ex, ex != null ? LoggerStatus.Error : LoggerStatus.Info);
+        }
+        public static void AddAsync(LoggerType loggerType, string requestParameter, string responseParameter, string ex, LoggerStatus status)
+        {
+            var log = new Sys_Log()
+            {
+                BeginDate = DateTime.Now,
+                EndDate = DateTime.Now,
+                User_Id = 0,
+                UserName = "",
+                //  Role_Id = ,
+                LogType = loggerType.ToString(),
+                ExceptionInfo = ex,
+                RequestParameter = requestParameter,
+                ResponseParameter = responseParameter,
+                Success = (int)status
+            };
+            loggerQueueData.Enqueue(log);
+        }
         /// <summary>
         /// 
         /// </summary>
@@ -76,7 +116,12 @@ namespace VOL.Core.Services
         /// <param name="responseParameter">响应参数</param>
         /// <param name="success">响应结果1、成功,2、异常，0、其他</param>
         /// <param name="userInfo">用户数据</param>
-        private static void Add(LoggerType loggerType, string requestParameter, string responseParameter, string ex, LoggerStatus status)
+        public static void Add(LoggerType loggerType, string requestParameter, string responseParameter, string ex, LoggerStatus status)
+        {
+            Add(loggerType.ToString(), requestParameter, responseParameter, ex, status);
+        }
+
+        public static void Add(string loggerType, string requestParameter, string responseParameter, string ex, LoggerStatus status)
         {
             Sys_Log log = null;
             try
@@ -84,28 +129,21 @@ namespace VOL.Core.Services
                 HttpContext context = Utilities.HttpContext.Current;
                 if (context.Request.Method == "OPTIONS") return;
                 ActionObserver cctionObserver = (context.RequestServices.GetService(typeof(ActionObserver)) as ActionObserver);
-
-                //如果当前请求已经写过日志就不再写日志
-                //if (cctionObserver.IsWrite) return;
-                //cctionObserver.IsWrite = true;
-
-
                 if (context == null)
                 {
-                    WriteText($"未获取到httpcontext信息,type:{loggerType.ToString()},reqParam:{requestParameter},respParam:{responseParameter},ex:{ex},success:{status.ToString()}");
+                    WriteText($"未获取到httpcontext信息,type:{loggerType},reqParam:{requestParameter},respParam:{responseParameter},ex:{ex},success:{status.ToString()}");
                     return;
                 }
-
                 UserInfo userInfo = UserContext.Current.UserInfo;
-
                 log = new Sys_Log()
                 {
+                    //Id = Guid.NewGuid().ToString(),
                     BeginDate = cctionObserver.RequestDate,
                     EndDate = DateTime.Now,
                     User_Id = userInfo.User_Id,
                     UserName = userInfo.UserTrueName,
                     Role_Id = userInfo.Role_Id,
-                    LogType = loggerType.ToString(),
+                    LogType = loggerType,
                     ExceptionInfo = ex,
                     RequestParameter = requestParameter,
                     ResponseParameter = responseParameter,
@@ -115,19 +153,24 @@ namespace VOL.Core.Services
             }
             catch (Exception exception)
             {
-                log = log ?? new Sys_Log();
-                log.ExceptionInfo = exception.Message;
+                log = log ?? new Sys_Log()
+                {
+                    BeginDate = DateTime.Now,
+                    EndDate = DateTime.Now,
+                    LogType = loggerType.ToString(),
+                    RequestParameter = requestParameter,
+                    ResponseParameter = responseParameter,
+                    Success = (int)status,
+                    ExceptionInfo = ex + exception.Message
+                };
             }
-            if (log == null) return;
-            lock (_logger)
-            {
-                loggerQueueData.Enqueue(log);
-            }
+            loggerQueueData.Enqueue(log);
         }
 
         private static void Start()
         {
             DataTable queueTable = CreateEmptyTable();
+            //  List<Sys_Log> list = new List<Sys_Log>();
             while (true)
             {
                 try
@@ -137,24 +180,17 @@ namespace VOL.Core.Services
                         DequeueToTable(queueTable); continue;
                     }
                     //每5秒写一次数据
-                    Thread.Sleep(5000);
+                    Thread.Sleep(1000);
                     if (queueTable.Rows.Count == 0) { continue; }
 
                     DBServerProvider.SqlDapper.BulkInsert(queueTable, "Sys_Log", SqlBulkCopyOptions.KeepIdentity, null, _loggerPath);
-
                     queueTable.Clear();
-
-                    if ((DateTime.Now - lastClearFileDT).TotalDays > 1)
-                    {
-                        Utilities.FileHelper.DeleteFolder(_loggerPath);
-                        lastClearFileDT = DateTime.Now;
-                    }
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"日志批量写入数据时出错:{ex.Message}");
                     WriteText(ex.Message + ex.StackTrace + ex.Source);
-                    queueTable.Clear();
+                    // list.Clear();
                 }
 
             }
@@ -175,9 +211,9 @@ namespace VOL.Core.Services
 
         private static void DequeueToTable(DataTable queueTable)
         {
-            Sys_Log log = loggerQueueData.Dequeue();
+            loggerQueueData.TryDequeue(out Sys_Log log);
             DataRow row = queueTable.NewRow();
-            if (log.BeginDate==null)
+            if (log.BeginDate == null)
             {
                 log.BeginDate = DateTime.Now;
             }
@@ -226,19 +262,23 @@ namespace VOL.Core.Services
             log.Url = context.Request.Scheme + "://" + context.Request.Host + context.Request.PathBase +
                 context.Request.Path;
 
-            log.UserIP = context.GetUserIp()?.Replace("::ffff:","");
+            log.UserIP = context.GetUserIp()?.Replace("::ffff:", "");
             log.ServiceIP = context.Connection.LocalIpAddress.MapToIPv4().ToString() + ":" + context.Connection.LocalPort;
 
             log.BrowserType = context.Request.Headers["User-Agent"];
+            if (log.BrowserType != null && log.BrowserType.Length > 190)
+            {
+                log.BrowserType = log.BrowserType.Substring(0, 190);
+            }
             if (string.IsNullOrEmpty(log.RequestParameter))
             {
                 try
                 {
                     log.RequestParameter = context.GetRequestParameters();
-                    if (log.RequestParameter != null)
-                    {
-                        log.RequestParameter = HttpUtility.UrlDecode(log.RequestParameter, Encoding.UTF8);
-                    }
+                    //if (log.RequestParameter != null)
+                    //{
+                    //    log.RequestParameter = HttpUtility.UrlDecode(log.RequestParameter, Encoding.UTF8);
+                    //}
                 }
                 catch (Exception ex)
                 {

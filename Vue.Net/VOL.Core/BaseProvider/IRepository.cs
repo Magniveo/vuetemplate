@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore.Query;
+﻿using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Query;
 using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
@@ -241,10 +242,13 @@ namespace VOL.Core.BaseProvider
         /// <param name="keys"></param>
         /// <param name="delList">是否将子表的数据也删除</param>
         /// <returns></returns>
-        int Delete(object[] keys, bool delList = false);
+        int DeleteWithKeys(object[] keys, bool delList = false);
 
         void Add(TEntity entities, bool SaveChanges = false);
         void AddRange(IEnumerable<TEntity> entities, bool SaveChanges = false);
+
+        Task AddAsync(TEntity entities);
+        Task AddRangeAsync(IEnumerable<TEntity> entities);
 
         void AddRange<T>(IEnumerable<T> entities, bool saveChanges = false)
            where T : class;
@@ -271,6 +275,40 @@ namespace VOL.Core.BaseProvider
         /// <param name="formattableString"></param>
         /// <returns></returns>
         IQueryable<TEntity> FromSqlInterpolated([System.Diagnostics.CodeAnalysis.NotNull] FormattableString sql);
-      
+
+
+        /// <summary>
+        /// 取消上下文跟踪(2021.08.22)
+        /// 更新报错时，请调用此方法：The instance of entity type 'XXX' cannot be tracked because another instance with the same key value for {'XX'} is already being tracked.
+        /// </summary>
+        /// <param name="entity"></param>
+        void Detached(TEntity entity);
+        void DetachedRange(IEnumerable<TEntity> entities);
+
+
+
+        IQueryable<TEntity> WhereIF([NotNull] Expression<Func<TEntity, object>> field, string value, LinqExpressionType linqExpression = LinqExpressionType.Equal);
+
+        /// <summary>
+        ///  if判断查询
+        /// </summary>
+        /// 查询示例，value不为null时参与条件查询
+        ///    string value = null;
+        ///    repository.WhereIF(value!=null,x=>x.Creator==value);
+        /// <param name="checkCondition"></param>
+        /// <param name="predicate"></param>
+        /// <returns></returns>
+        IQueryable<TEntity> WhereIF(bool checkCondition, Expression<Func<TEntity, bool>> predicate);
+
+        /// <summary>
+        ///  if判断查询
+        /// </summary>
+        /// 查询示例，value不为null时参与条件查询
+        ///    string value = null;
+        ///    repository.WhereIF<Sys_User>(value!=null,x=>x.Creator==value);
+        /// <param name="checkCondition"></param>
+        /// <param name="predicate"></param>
+        /// <returns></returns>
+        IQueryable<T> WhereIF<T>(bool checkCondition, Expression<Func<T, bool>> predicate) where T : class;
     }
 }
